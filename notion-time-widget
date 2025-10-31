@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Japan Time & Sun Info</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background-color: #000;
+            color: #fff;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            text-align: center;
+            max-width: 500px;
+            width: 100%;
+        }
+        
+        .time {
+            font-size: clamp(36px, 10vw, 72px);
+            font-weight: 300;
+            letter-spacing: -2px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: baseline;
+            justify-content: center;
+            gap: 8px;
+        }
+        
+        .time-main {
+            font-size: inherit;
+        }
+        
+        .time-period {
+            font-size: clamp(18px, 4vw, 28px);
+            color: #aaa;
+        }
+        
+        .date {
+            font-size: clamp(16px, 3vw, 24px);
+            color: #aaa;
+            margin-bottom: clamp(20px, 5vw, 40px);
+        }
+        
+        .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: clamp(15px, 4vw, 30px);
+            margin-top: 20px;
+        }
+        
+        @media (max-width: 480px) {
+            .info-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        .info-item {
+            text-align: center;
+        }
+        
+        .info-label {
+            font-size: clamp(12px, 2vw, 14px);
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+        }
+        
+        .info-value {
+            font-size: clamp(20px, 4vw, 28px);
+            font-weight: 300;
+        }
+        
+        .loading {
+            color: #666;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="time">
+            <span class="time-main" id="time">--:--:--</span>
+            <span class="time-period" id="period">--</span>
+        </div>
+        <div class="date" id="date">Loading...</div>
+        
+        <div class="info-grid">
+            <div class="info-item">
+                <div class="info-label">Sunrise</div>
+                <div class="info-value" id="sunrise">--:--</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Sunset</div>
+                <div class="info-value" id="sunset">--:--</div>
+            </div>
+            <div class="info-item" style="grid-column: 1 / -1;">
+                <div class="info-label">Day Length</div>
+                <div class="info-value" id="dayLength">--h --m</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const TOKYO_LAT = 35.6762;
+        const TOKYO_LNG = 139.6503;
+        
+        let sunData = null;
+
+        function updateTime() {
+            const now = new Date();
+            const japanTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Tokyo' }));
+            
+            let hours = japanTime.getHours();
+            const period = hours >= 12 ? 'PM' : 'AM';
+            hours = hours % 12 || 12;
+            
+            const minutes = japanTime.getMinutes().toString().padStart(2, '0');
+            const seconds = japanTime.getSeconds().toString().padStart(2, '0');
+            
+            document.getElementById('time').textContent = `${hours}:${minutes}:${seconds}`;
+            document.getElementById('period').textContent = period;
+            
+            const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Tokyo' };
+            document.getElementById('date').textContent = japanTime.toLocaleDateString('en-US', options);
+        }
+
+        function calculateSunTimes(date) {
+            const lat = TOKYO_LAT * Math.PI / 180;
+            const lng = TOKYO_LNG;
+            
+            const dayOfYear = Math.floor((date - new Date(date.getFullYear(), 0, 0)) / 86400000);
+            const declination = -23.45 * Math.cos((360/365) * (dayOfYear + 10) * Math.PI / 180);
+            const decRad = declination * Math.PI / 180;
+            
+            const hourAngle = Math.acos(-Math.tan(lat) * Math.tan(decRad));
+            const hourAngleDeg = hourAngle * 180 / Math.PI;
+            
+            // Calculate solar noon in UTC, then convert to JST (UTC+9)
+            const solarNoon = 12 - (lng / 15);
+            const sunriseTime = solarNoon - (hourAngleDeg / 15) + 9; // Add JST offset
+            const sunsetTime = solarNoon + (hourAngleDeg / 15) + 9; // Add JST offset
+            
+            function timeToString(decimalHours) {
+                // Normalize to 0-24 range
+                let normalized = decimalHours % 24;
+                if (normalized < 0) normalized += 24;
+                
+                const hours24 = Math.floor(normalized);
+                const minutes = Math.round((normalized - hours24) * 60);
+                
+                // Convert to 12-hour format
+                const period = hours24 >= 12 ? 'PM' : 'AM';
+                const hours12 = hours24 % 12 || 12;
+                
+                return `${hours12}:${minutes.toString().padStart(2, '0')} ${period}`;
+            }
+            
+            const dayLengthHours = (hourAngleDeg / 15) * 2;
+            const dlHours = Math.floor(dayLengthHours);
+            const dlMinutes = Math.round((dayLengthHours - dlHours) * 60);
+            
+            return {
+                sunrise: timeToString(sunriseTime),
+                sunset: timeToString(sunsetTime),
+                dayLength: `${dlHours}h ${dlMinutes}m`
+            };
+        }
+
+        function updateSunInfo() {
+            const now = new Date();
+            const japanDate = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Tokyo' }));
+            
+            sunData = calculateSunTimes(japanDate);
+            
+            document.getElementById('sunrise').textContent = sunData.sunrise;
+            document.getElementById('sunset').textContent = sunData.sunset;
+            document.getElementById('dayLength').textContent = sunData.dayLength;
+        }
+
+        updateTime();
+        updateSunInfo();
+        
+        setInterval(updateTime, 1000);
+        setInterval(updateSunInfo, 60000);
+    </script>
+</body>
+</html>
